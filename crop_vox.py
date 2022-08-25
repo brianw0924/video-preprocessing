@@ -305,7 +305,7 @@ if __name__ == "__main__":
         next(f)
         for l in f.readlines():
             _id, txtCount = l.split(',')
-            if int(txtCount) < 500: continue
+            # if int(txtCount) < 500: continue
             ids.add(_id)
     print(f"total ids: {len(ids)}")
 
