@@ -1,3 +1,4 @@
+from weakref import ref
 import numpy as np
 import pandas as pd
 import imageio
@@ -9,10 +10,11 @@ import time
 from util import bb_intersection_over_union, join, scheduler, crop_bbox_from_frames, save
 from argparse import ArgumentParser
 from skimage.transform import resize
+from tqdm import tqdm
 warnings.filterwarnings("ignore")
 
 DEVNULL = open(os.devnull, 'wb')
-REF_FRAME_SIZE = 360
+REF_FRAME_SIZE = 256
 REF_FPS = 25
 
 
@@ -49,7 +51,8 @@ def estimate_bbox(person_id, video_id, video_path, fa, args):
             mult = frame.shape[0] / REF_FRAME_SIZE
             frame = resize(frame, (REF_FRAME_SIZE, int(frame.shape[1] / mult)), preserve_range=True)
  
-            if args.dataset_version == 1:
+            # if args.dataset_version == 1:
+            if person_id[2] == "1":
                 x, y, w, h = val['X '], val['Y '], val['W '], val['H ']
             else:
                 x, y, w, h = val['X '] *  frame.shape[1], val['Y '] * frame.shape[0], val['W '] * frame.shape[1], val['H '] * frame.shape[0]
@@ -71,7 +74,8 @@ def store(frame_list, tube_bbox, video_id, utterance, person_id, start, end, vid
     start += round(chunk_start * REF_FPS)
     end += round(chunk_start * REF_FPS)
     name = (person_id + "#" + video_id + "#" + utterance + '#' + str(video_count).zfill(3) + ".mp4")
-    partition = 'test' if person_id in TEST_PERSONS else 'train'
+    # partition = 'test' if person_id in TEST_PERSONS else 'train'
+    partition = "txtCount500"
     save(os.path.join(args.out_folder, partition, name), out, args.format)
     return [{'bbox': '-'.join(map(str, final_bbox)), 'start': start, 'end': end, 'fps': REF_FPS,
              'video_id': '#'.join([video_id, person_id]), 'height': frame_list[0].shape[0], 
@@ -135,6 +139,8 @@ def split_in_utterance(person_id, video_id, args):
     video_path = os.path.join(args.video_folder, video_id + ".mp4")
 
     if not os.path.exists(video_path):
+        with open('broken_videos.txt', 'a') as f:
+            f.write(f"{person_id},{video_id}\n")
         print("No video file %s found, probably broken link" % video_id)
         return []
 
@@ -236,14 +242,14 @@ if __name__ == "__main__":
     parser.add_argument("--video_folder", default='videos', help='Path to intermediate videos')
     parser.add_argument("--chunk_folder", default='chunks', help="Path to folder with video chunks")
     parser.add_argument("--bbox_folder", default='bbox', help="Path to folder with bboxes")
-    parser.add_argument("--out_folder", default='vox-png', help='Folder for processed dataset')
+    parser.add_argument("--out_folder", default='vox-mp4', help='Folder for processed dataset')
     parser.add_argument("--chunks_metadata", default='vox-metadata.csv', help='File with metadata')
 
     parser.add_argument("--youtube", default='./youtube-dl', help='Command for launching youtube-dl')
     parser.add_argument("--workers", default=1, type=int, help='Number of parallel workers')
     parser.add_argument("--device_ids", default="0", help="Names of the devices comma separated.")
 
-    parser.add_argument("--data_range", default=(0, 10000), type=lambda x: tuple(map(int, x.split('-'))), help="Range of ids for processing")
+    parser.add_argument("--data_range", default=(0, 20000), type=lambda x: tuple(map(int, x.split('-'))), help="Range of ids for processing")
  
 
     parser.add_argument("--no-download", dest="download", action="store_false", help="Do not download videos")
@@ -263,7 +269,7 @@ if __name__ == "__main__":
     parser.set_defaults(remove_intermediate_results=False)
 
     args = parser.parse_args()
-
+    os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
     if args.dataset_version == 1:
         TEST_PERSONS = ['id' + str(i) for i in range(10270, 10310)]
     else:
@@ -289,11 +295,20 @@ if __name__ == "__main__":
         os.makedirs(args.bbox_folder)
     if not os.path.exists(args.out_folder):
         os.makedirs(args.out_folder)
-    for partition in ['test', 'train']:
+    for partition in ['test', 'train', 'txtCount500']:
         if not os.path.exists(os.path.join(args.out_folder, partition)):
             os.makedirs(os.path.join(args.out_folder, partition))
 
-    ids = set(os.listdir(args.annotations_folder))
+    # ids = set(os.listdir(args.annotations_folder))
+    ids = set()
+    with open("txtCount.txt") as f:
+        next(f)
+        for l in f.readlines():
+            _id, txtCount = l.split(',')
+            if int(txtCount) < 500: continue
+            ids.add(_id)
+    print(f"total ids: {len(ids)}")
+
     ids_range = {'id' + str(num).zfill(5) for num in range(args.data_range[0], args.data_range[1])}
     ids = sorted(list(ids.intersection(ids_range)))
     scheduler(ids, run, args)
