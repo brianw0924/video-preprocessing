@@ -75,7 +75,7 @@ def store(frame_list, tube_bbox, video_id, utterance, person_id, start, end, vid
     end += round(chunk_start * REF_FPS)
     name = (person_id + "#" + video_id + "#" + utterance + '#' + str(video_count).zfill(3) + ".mp4")
     # partition = 'test' if person_id in TEST_PERSONS else 'train'
-    partition = "txtCount500"
+    partition = "all"
     save(os.path.join(args.out_folder, partition, name), out, args.format)
     return [{'bbox': '-'.join(map(str, final_bbox)), 'start': start, 'end': end, 'fps': REF_FPS,
              'video_id': '#'.join([video_id, person_id]), 'height': frame_list[0].shape[0], 
@@ -295,7 +295,7 @@ if __name__ == "__main__":
         os.makedirs(args.bbox_folder)
     if not os.path.exists(args.out_folder):
         os.makedirs(args.out_folder)
-    for partition in ['test', 'train', 'txtCount500']:
+    for partition in ['test', 'train', 'all']:
         if not os.path.exists(os.path.join(args.out_folder, partition)):
             os.makedirs(os.path.join(args.out_folder, partition))
 
