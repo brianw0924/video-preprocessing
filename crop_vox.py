@@ -133,7 +133,7 @@ def download(video_id, args):
     #                  '--sub-lang', 'en', '--skip-unavailable-fragments',
     #                  "https://www.youtube.com/watch?v=" + video_id, "--output",
     #                  video_path], stdout=DEVNULL, stderr=DEVNULL)
-    subprocess.call([args.youtube, '-f', "''best/mp4''", '--skip-unavailable-fragments',
+    subprocess.call(['yt-dlp', '-f', "''best/mp4''", '--skip-unavailable-fragments',
                      "https://www.youtube.com/watch?v=" + video_id, "--output",
                      video_path], stdout=DEVNULL, stderr=DEVNULL)
     return video_path

@@ -10,8 +10,7 @@ unzip vox2_test_txt.zip
 wget www.robots.ox.ac.uk/~vgg/data/voxceleb/data/vox2_dev_txt.zip
 unzip vox2_dev_txt.zip
 
-wget https://yt-dl.org/downloads/latest/youtube-dl -O youtube-dl
-chmod a+rx youtube-dl
+python3 -m pip install -U yt-dlp
 
 sudo apt-get install ffmpeg
 
