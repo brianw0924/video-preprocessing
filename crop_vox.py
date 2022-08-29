@@ -1,4 +1,3 @@
-from weakref import ref
 import numpy as np
 import pandas as pd
 import imageio
@@ -14,7 +13,7 @@ from tqdm import tqdm
 warnings.filterwarnings("ignore")
 
 DEVNULL = open(os.devnull, 'wb')
-REF_FRAME_SIZE = 256
+REF_FRAME_SIZE = 360
 REF_FPS = 25
 
 
@@ -25,7 +24,7 @@ def extract_bbox(frame, refbbox, fa):
     else:
         bbox = np.array([0, 0, 0, 0, 0])
     return np.maximum(np.array(bbox), 0)
-
+    # return np.maximum(np.array(refbbox), 0)
 
 def save_bbox_list(video_path, bbox_list):
     f = open(os.path.join(args.bbox_folder, os.path.basename(video_path)[:-4] + '.txt'), 'w')
@@ -58,25 +57,27 @@ def estimate_bbox(person_id, video_id, video_path, fa, args):
                 x, y, w, h = val['X '] *  frame.shape[1], val['Y '] * frame.shape[0], val['W '] * frame.shape[1], val['H '] * frame.shape[0]
             bbox = extract_bbox(frame, (x, y, x + w, y + h), fa)
             bbox_list.append(bbox * mult)
-    except IndexError:
-        None
+    except Exception as e:
+        print(f"estimate_bbox: {e}")
 
     save_bbox_list(video_path, bbox_list)
 
 
 def store(frame_list, tube_bbox, video_id, utterance, person_id, start, end, video_count, chunk_start, args):
-    out, final_bbox = crop_bbox_from_frames(frame_list, tube_bbox, min_frames=args.min_frames,
-                                            image_shape=args.image_shape, min_size=args.min_size, 
-                                            increase_area=args.increase)
+    out, final_bbox, partition = crop_bbox_from_frames(frame_list, tube_bbox, min_frames=args.min_frames,
+                                                            image_shape=args.image_shape, min_size=args.min_size, 
+                                                            increase_area=args.increase)
     if out is None:
         return []
-
     start += round(chunk_start * REF_FPS)
     end += round(chunk_start * REF_FPS)
-    name = (person_id + "#" + video_id + "#" + utterance + '#' + str(video_count).zfill(3) + ".mp4")
+    name = (video_id + "#" + utterance + '#' + str(video_count).zfill(3) + ".mp4")
+    # name = (person_id + "#" + video_id + "#" + utterance + '#' + str(video_count).zfill(3) + ".mp4")
     # partition = 'test' if person_id in TEST_PERSONS else 'train'
-    partition = "all"
-    save(os.path.join(args.out_folder, partition, name), out, args.format)
+    if not os.path.exists(os.path.join(args.out_folder, partition, person_id)):
+        os.makedirs(os.path.join(args.out_folder, partition, person_id))
+
+    save(os.path.join(args.out_folder, partition, person_id, name), out, args.format)
     return [{'bbox': '-'.join(map(str, final_bbox)), 'start': start, 'end': end, 'fps': REF_FPS,
              'video_id': '#'.join([video_id, person_id]), 'height': frame_list[0].shape[0], 
              'width': frame_list[0].shape[1], 'partition': partition}]
@@ -117,9 +118,9 @@ def crop_video(person_id, video_id, video_path, args):
                 frame_list = []
             tube_bbox = join(tube_bbox, bbox)
             frame_list.append(frame)
-    except IndexError as e:
-        None
-    
+    except Exception as e :
+        print(f"crop_video: {e}")
+
     chunks_data += store(frame_list, tube_bbox, video_id, utterance, person_id, start, i + 1, video_count, chunk_start,
                          args)
 
@@ -128,8 +129,11 @@ def crop_video(person_id, video_id, video_path, args):
 
 def download(video_id, args):
     video_path = os.path.join(args.video_folder, video_id + ".mp4")
-    subprocess.call([args.youtube, '-f', "''best/mp4''", '--write-auto-sub', '--write-sub',
-                     '--sub-lang', 'en', '--skip-unavailable-fragments',
+    # subprocess.call([args.youtube, '-f', "''best/mp4''", '--write-auto-sub', '--write-sub',
+    #                  '--sub-lang', 'en', '--skip-unavailable-fragments',
+    #                  "https://www.youtube.com/watch?v=" + video_id, "--output",
+    #                  video_path], stdout=DEVNULL, stderr=DEVNULL)
+    subprocess.call([args.youtube, '-f', "''best/mp4''", '--skip-unavailable-fragments',
                      "https://www.youtube.com/watch?v=" + video_id, "--output",
                      video_path], stdout=DEVNULL, stderr=DEVNULL)
     return video_path
@@ -198,7 +202,7 @@ def run(params):
                         try:
                             estimate_bbox(person_id, video_id, chunk, fa, args)
                             break
-                        except RuntimeError as e:
+                        except Exception as e:
                             if str(e).startswith('CUDA'):
                                 print("Warning: out of memory, sleep for 1s")
                                 time.sleep(1)
@@ -218,8 +222,10 @@ def run(params):
                 for file in intermediate_files:
                     if os.path.exists(file):
                         os.remove(file)
+
         except Exception as e:
-            print (e)
+            print(f"run: {e}")
+    tqdm.write(f"DONE: {person_id}")
     return chunks_data
 
 
@@ -242,7 +248,7 @@ if __name__ == "__main__":
     parser.add_argument("--video_folder", default='videos', help='Path to intermediate videos')
     parser.add_argument("--chunk_folder", default='chunks', help="Path to folder with video chunks")
     parser.add_argument("--bbox_folder", default='bbox', help="Path to folder with bboxes")
-    parser.add_argument("--out_folder", default='vox-mp4', help='Folder for processed dataset')
+    parser.add_argument("--out_folder", default='vox-mp4-target', help='Folder for processed dataset')
     parser.add_argument("--chunks_metadata", default='vox-metadata.csv', help='File with metadata')
 
     parser.add_argument("--youtube", default='./youtube-dl', help='Command for launching youtube-dl')
@@ -268,8 +274,10 @@ if __name__ == "__main__":
     parser.set_defaults(estimate_bbox=True)
     parser.set_defaults(remove_intermediate_results=False)
 
+    with open('broken_videos.txt', 'w') as f:
+        f.write("person_id,video_id\n")
     args = parser.parse_args()
-    os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
+    # os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
     if args.dataset_version == 1:
         TEST_PERSONS = ['id' + str(i) for i in range(10270, 10310)]
     else:
@@ -295,20 +303,20 @@ if __name__ == "__main__":
         os.makedirs(args.bbox_folder)
     if not os.path.exists(args.out_folder):
         os.makedirs(args.out_folder)
-    for partition in ['test', 'train', 'all']:
+    for partition in ['all']:
         if not os.path.exists(os.path.join(args.out_folder, partition)):
             os.makedirs(os.path.join(args.out_folder, partition))
 
     # ids = set(os.listdir(args.annotations_folder))
-    ids = set()
+    ids = []
     with open("txtCount.txt") as f:
         next(f)
         for l in f.readlines():
             _id, txtCount = l.split(',')
             # if int(txtCount) < 500: continue
-            ids.add(_id)
+            ids.append(_id)
     print(f"total ids: {len(ids)}")
 
-    ids_range = {'id' + str(num).zfill(5) for num in range(args.data_range[0], args.data_range[1])}
-    ids = sorted(list(ids.intersection(ids_range)))
+    # ids_range = {'id' + str(num).zfill(5) for num in range(args.data_range[0], args.data_range[1])}
+    # ids = sorted(list(ids.intersection(ids_range)))
     scheduler(ids, run, args)
